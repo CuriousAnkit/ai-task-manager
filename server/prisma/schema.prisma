@@ -1,0 +1,175 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ------------------------
+// Enums
+// ------------------------
+
+enum Role {
+  ADMIN
+  MEMBER
+}
+
+enum TeamRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  IN_REVIEW
+  DONE
+  BLOCKED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+// ------------------------
+// Core Models
+// ------------------------
+
+model User {
+  id           Int      @id @default(autoincrement())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(MEMBER)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  teamMemberships TeamMember[]
+  ownedTasks      Task[]         @relation("TaskOwner")
+  assignedTasks   TaskAssignee[]
+  categories      Category[]
+
+  @@map("users")
+}
+
+model Team {
+  id        Int      @id @default(autoincrement())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members TeamMember[]
+  tasks   Task[]
+
+  @@map("teams")
+}
+
+model TeamMember {
+  id       Int      @id @default(autoincrement())
+  userId   Int
+  teamId   Int
+  role     TeamRole @default(MEMBER)
+  joinedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, teamId])
+  @@map("team_members")
+}
+
+model Task {
+  id               Int        @id @default(autoincrement())
+  title            String
+  description      String?    @db.Text
+  status           TaskStatus @default(TODO)
+  priority         Priority   @default(MEDIUM)
+  dueDate          DateTime?
+  estimatedMinutes Int?
+  aiGenerated      Boolean    @default(false)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  ownerId Int
+  owner   User @relation("TaskOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  teamId Int?
+  team   Team? @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  assignees  TaskAssignee[]
+  categories TaskCategory[]
+
+  dependsOn    TaskDependency[] @relation("DependentTask")
+  dependedOnBy TaskDependency[] @relation("DependencyTask")
+
+  @@index([teamId])
+  @@index([ownerId])
+  @@map("tasks")
+}
+
+model TaskAssignee {
+  id         Int      @id @default(autoincrement())
+  taskId     Int
+  userId     Int
+  assignedAt DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, userId])
+  @@map("task_assignees")
+}
+
+model Category {
+  id    Int     @id @default(autoincrement())
+  name  String
+  color String?
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  tasks TaskCategory[]
+
+  @@unique([userId, name])
+  @@map("categories")
+}
+
+model TaskCategory {
+  id         Int @id @default(autoincrement())
+  taskId     Int
+  categoryId Int
+
+  task     Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, categoryId])
+  @@map("task_categories")
+}
+
+model TaskDependency {
+  id Int @id @default(autoincrement())
+
+  dependentTaskId Int
+  dependentTask   Task @relation("DependentTask", fields: [dependentTaskId], references: [id], onDelete: Cascade)
+
+  dependencyTaskId Int
+  dependencyTask   Task @relation("DependencyTask", fields: [dependencyTaskId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([dependentTaskId, dependencyTaskId])
+  @@map("task_dependencies")
+}
